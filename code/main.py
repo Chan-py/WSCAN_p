@@ -1,5 +1,5 @@
 # Usage example:
-#   python main.py --network collegemsg \
+#   python main.py --network karate \
 #                  --eps 0.25 --mu 2 --similarity Gen
 
 import argparse
@@ -94,17 +94,12 @@ for cid, nodes in list(clusters.items()):
 
 if args.gt:
       ari_score = compute_ARI(clusters, ground_truth)
-      print(f"Adjusted Rand Index: {ari_score:.4f}")
+      print(f"ARI : {ari_score:.4f}")
       nmi_score = compute_NMI(clusters, ground_truth)
-      print(f"NMI: {nmi_score:.4f}")
+      print(f"NMI : {nmi_score:.4f}")
 else:
       ari_score = None
       nmi_score = None
-
-# modularity = compute_modularity(G, clusters)
-# DBI = compute_DBI(G, clusters)
-# SI = compute_SI(G, clusters)
-# Qs = compute_Qs(G, clusters, similarity_func, args.gamma)
 
 plot_clusters(G, clusters)
 
