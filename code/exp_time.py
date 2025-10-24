@@ -13,7 +13,6 @@ import similarity
 
 from metrics import compute_ARI, compute_NMI
 from utils import load_ground_truth, plot_clusters, save_result_to_csv
-from change_graph import perturb_edge_weights
 
 # --------------------------------------------------------------------
 # argument parsing
@@ -27,43 +26,23 @@ parser.add_argument("--mu",  type=int,   default=2,
 parser.add_argument("--gamma",  type=float,   default=1,
                     help="degree considering undirected edges")
 
-parser.add_argument("--similarity", choices=["SCAN", "WSCAN", "cosine", "WSCAN++", "WSCAN++_max", "WSCAN++_avg", "Jaccard"],
-                    default="WSCAN++",
+parser.add_argument("--similarity", choices=["scan", "wscan", "cosine", "Gen", "Jaccard"],
+                    default="Gen",
                     help="choose similarity function")
 parser.add_argument("--network", default="karate",
                     help="path to weighted edge list (u v w)")
-parser.add_argument("--gt", default=True,
-                    help="does ground truth exist?")
-
-parser.add_argument("--dataclass", default="real",
-                    help="is dataset real? real or synthetic")
-parser.add_argument("--exp_mode", default="time",
-                    help="exp for what? effectiveness or time")
-
-parser.add_argument("--delta_p", type=float, default=0,
-                    help="how much percent of max_w will be delta")
-parser.add_argument("--edge_p", type=float, default=0,
-                    help="how much percent of edges will be changed")
-parser.add_argument("--weight_method", default="max",
-                    help="which weight will be multiplied to delta (max or avg)")
-
-parser.add_argument("--use_parallel", default="False",
-                    help="using parallel or not (True or False)")
-parser.add_argument("--process_num", type=int, default=1,
-                    help="number of processes for parallel")
+parser.add_argument("--gt", default=False,
+                    help="path to ground truth")
 
 args = parser.parse_args()
 
 process = psutil.Process(os.getpid())
 memory_before = process.memory_info().rss / (1024 * 1024)  # Convert to MB
 
-path = "../dataset/" + args.dataclass + "/"
-if args.dataclass == "synthetic":
-      path += args.exp_mode + "/scale/"
 # --------------------------------------------------------------------
 # load network  (expects 'u v weight' per line)
 # --------------------------------------------------------------------
-dataset = path + args.network + "/network.dat"
+dataset = "../dataset/synthetic/scalability/" + args.network + ".dat"
 G = nx.read_weighted_edgelist(dataset, nodetype=int)
 
 # print(len(G.nodes))
@@ -73,38 +52,24 @@ print(f"Loaded graph: {args.network}  "
       f"nodes={G.number_of_nodes()}  edges={G.number_of_edges()}")
 
 # --------------------------------------------------------------------
-# Change graph edge weights
-# --------------------------------------------------------------------
-perturb_edge_weights(G, args.delta_p, args.edge_p, args.weight_method)
-
-# --------------------------------------------------------------------
 # load answer
 # --------------------------------------------------------------------
-gt_filename = "community" if args.dataclass == "synthetic" else "labels"
-gt_path = path + args.network + "/" + gt_filename + ".dat"
+gt_path = "../dataset/synthetic/scalability/" + args.network + ".gt"
 if args.gt:
       ground_truth = load_ground_truth(gt_path)
 
 # --------------------------------------------------------------------
 # run selected algorithm
 # --------------------------------------------------------------------
-sim = {"SCAN" : similarity.scan_similarity, "WSCAN" : similarity.wscan_similarity,
-       "cosine" : similarity.cosine_similarity, "WSCAN++" : similarity.wscan_p_similarity,
-       "WSCAN++_max" : similarity.wscan_p_similarity_max, "WSCAN++_avg" : similarity.wscan_p_similarity_avg,
+sim = {"scan" : similarity.scan_similarity, "wscan" : similarity.wscan_similarity,
+       "cosine" : similarity.cosine_similarity, "Gen" : similarity.Gen_wscan_similarity, 
        "Jaccard" : similarity.weighted_jaccard_similarity}
 
 similarity_func = sim[args.similarity]
 
-parallel = True if args.use_parallel == "True" else False
-
-if "WSCAN++" in args.similarity:
-      start = time.time()
-      clusters, hubs, outliers, similarity_calculating_time = clustering.run(G, similarity_func, eps=args.eps, mu=args.mu, gamma=args.gamma, parallel=parallel, workers=args.process_num)
-      runtime = time.time() - start
-else:
-      start = time.time()
-      clusters, hubs, outliers, similarity_calculating_time = clustering.run_include_me(G, similarity_func, eps=args.eps, mu=args.mu, gamma=args.gamma, parallel=parallel, workers=args.process_num)
-      runtime = time.time() - start
+start = time.time()
+clusters, hubs, outliers = clustering.run(G, similarity_func, eps=args.eps, mu=args.mu, gamma=args.gamma)
+runtime = time.time() - start
 
 memory_after = process.memory_info().rss / (1024 * 1024)  # Convert to MB
 memory_usage = memory_after - memory_before  # Calculate memory used
@@ -112,8 +77,6 @@ memory_usage = memory_after - memory_before  # Calculate memory used
 # --------------------------------------------------------------------
 # basic report
 # --------------------------------------------------------------------
-# print(hubs)
-# print(outliers)
 print("\n=== RESULT SUMMARY ===")
 print(f"similarity        : {args.similarity}")
 print(f"ε, μ              : {args.eps}, {args.mu}")
@@ -136,16 +99,14 @@ if args.gt:
       print(f"NMI: {nmi_score:.4f}")
 else:
       ari_score = None
-      nmi_score = None
+      nmi_core = None
 
-# --- counts ---
-num_clusters = len(clusters)
-num_hubs = len(hubs)
-num_outliers = len(outliers)
+# modularity = compute_modularity(G, clusters)
+# DBI = compute_DBI(G, clusters)
+# SI = compute_SI(G, clusters)
+# Qs = compute_Qs(G, clusters, similarity_func, args.gamma)
 
-# plot_clusters(G, clusters)
+plot_clusters(G, clusters)
 
-args.output_path = "./exp/" + args.exp_mode + "/parallel.csv"
-# args.output_path = "./exp/" + "test" + "/test.csv"
-save_result_to_csv(args, runtime, memory_usage, ari_score, nmi_score, 
-                   num_clusters, num_hubs, num_outliers, similarity_calculating_time)
+args.output_path = "./output/time.csv"
+save_result_to_csv(args, runtime, memory_usage, ari_score, nmi_score)
