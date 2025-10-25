@@ -19,7 +19,7 @@
 - gamma : balance factor
 
 - similarity : how to compute similarity (ours : WSCAN++)
-- network : path to network dataset
+- network : path to network dataset ; only insert network name
 
 - dataclass : real data or synthetic data (for dataset path)
 - exp_mode : what is the experiment for? (ex. effectiveness or time ..)
