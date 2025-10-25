@@ -32,6 +32,5 @@
 
 ## Usage example
 ```
-python main.py --network karate --eps 0.25 --mu 2 --gamma 0.5 --similarity WSCAN++ --dataclass real --exp_mode effectiveness
---use_parallel True --process_num 32
+python main.py --network karate --eps 0.25 --mu 2 --gamma 0.5 --similarity WSCAN++ --dataclass real --exp_mode effectiveness --use_parallel True --process_num 32 
 ```
