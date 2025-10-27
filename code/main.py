@@ -132,16 +132,8 @@ if args.gt == "True":
       nmi_score = compute_NMI(clusters, ground_truth)
       print(f"NMI: {nmi_score:.4f}")
 else:
-      modularity_score = compute_modularity(G, clusters)
-      print(f"Modularity: {modularity_score:.4f}")
-      conductance_score = compute_conductance(G, clusters)
-      print(f"Conductance: {conductance_score:.4f}")
-      dbi_score = compute_DBI(G, clusters)
-      print(f"Davies-Bouldin Index: {dbi_score:.4f}")
-      si_score = compute_SI(G, clusters)
-      print(f"Silhouette Index: {si_score:.4f}")
-      qs_score = compute_Qs(G, clusters)
-      print(f"Qs: {qs_score:.4f}")
+      ari_score = None
+      nmi_score = None
 
 # --- counts ---
 num_clusters = len(clusters)
@@ -152,9 +144,5 @@ num_outliers = len(outliers)
 
 args.output_path = "./exp/" + args.exp_mode + "/test.csv"
 
-if args.gt == "True":
-      save_result_to_csv(args, runtime, memory_usage, ari_score, nmi_score, 
-                   num_clusters, num_hubs, num_outliers, similarity_calculating_time)
-else:
-      save_result_to_csv_no_gt(args, runtime, memory_usage, modularity_score, conductance_score, dbi_score, si_score, qs_score,
-                       num_clusters, num_hubs, num_outliers, similarity_calculating_time)
+save_result_to_csv(args, runtime, memory_usage, ari_score, nmi_score, 
+            num_clusters, num_hubs, num_outliers, similarity_calculating_time)
