@@ -1,7 +1,3 @@
-# Usage example:
-#   python main.py --network collegemsg \
-#                  --eps 0.25 --mu 2 --similarity Gen
-
 import argparse
 import time
 import networkx as nx
@@ -12,7 +8,8 @@ import clustering
 import similarity
 
 from metrics import compute_ARI, compute_NMI
-from utils import load_ground_truth, plot_clusters, save_result_to_csv
+from metrics import compute_modularity, compute_conductance, compute_DBI, compute_SI, compute_Qs
+from utils import load_ground_truth, save_result_to_csv, save_result_to_csv_no_gt
 from change_graph import perturb_edge_weights
 
 # --------------------------------------------------------------------
@@ -32,8 +29,8 @@ parser.add_argument("--similarity", choices=["SCAN", "WSCAN", "cosine", "WSCAN++
                     help="choose similarity function")
 parser.add_argument("--network", default="karate",
                     help="path to weighted edge list (u v w)")
-parser.add_argument("--gt", default=True,
-                    help="does ground truth exist?")
+parser.add_argument("--gt", default="True",
+                    help="does ground truth exist? (True or False)")
 
 parser.add_argument("--dataclass", default="real",
                     help="is dataset real? real or synthetic")
@@ -129,14 +126,22 @@ for cid, nodes in list(clusters.items()):
 # metrics
 # --------------------------------------------------------------------
 
-if args.gt:
+if args.gt == "True":
       ari_score = compute_ARI(clusters, ground_truth)
       print(f"Adjusted Rand Index: {ari_score:.4f}")
       nmi_score = compute_NMI(clusters, ground_truth)
       print(f"NMI: {nmi_score:.4f}")
 else:
-      ari_score = None
-      nmi_score = None
+      modularity_score = compute_modularity(G, clusters)
+      print(f"Modularity: {modularity_score:.4f}")
+      conductance_score = compute_conductance(G, clusters)
+      print(f"Conductance: {conductance_score:.4f}")
+      dbi_score = compute_DBI(G, clusters)
+      print(f"Davies-Bouldin Index: {dbi_score:.4f}")
+      si_score = compute_SI(G, clusters)
+      print(f"Silhouette Index: {si_score:.4f}")
+      qs_score = compute_Qs(G, clusters)
+      print(f"Qs: {qs_score:.4f}")
 
 # --- counts ---
 num_clusters = len(clusters)
@@ -145,7 +150,11 @@ num_outliers = len(outliers)
 
 # plot_clusters(G, clusters)
 
-args.output_path = "./exp/" + args.exp_mode + "/parallel.csv"
-# args.output_path = "./exp/" + "test" + "/test.csv"
-save_result_to_csv(args, runtime, memory_usage, ari_score, nmi_score, 
+args.output_path = "./exp/" + args.exp_mode + "/test.csv"
+
+if args.gt == "True":
+      save_result_to_csv(args, runtime, memory_usage, ari_score, nmi_score, 
                    num_clusters, num_hubs, num_outliers, similarity_calculating_time)
+else:
+      save_result_to_csv_no_gt(args, runtime, memory_usage, modularity_score, conductance_score, dbi_score, si_score, qs_score,
+                       num_clusters, num_hubs, num_outliers, similarity_calculating_time)

@@ -36,16 +36,12 @@ def compute_NMI(clusters, ground_truth, average_method='arithmetic'):
       - clusters: dict {cluster_id -> iterable_of_nodes}
       - ground_truth: dict {node -> true_label}
       - average_method: {'min', 'geometric', 'arithmetic', 'max'} (sklearn 옵션)
-
-    미소속 노드(허브/아웃라이어)는 예측 라벨 -1로 처리합니다.
     """
-    # 예측 라벨 매핑
     y_pred_map = {}
     for cid, members in clusters.items():
         for u in members:
             y_pred_map[u] = cid
 
-    # 비교할 노드 목록(ground truth에 정의된 노드 기준)
     nodes = sorted(ground_truth.keys())
     y_true = [ground_truth[u] for u in nodes]
     y_pred = [y_pred_map.get(u, -1) for u in nodes]
@@ -55,85 +51,116 @@ def compute_NMI(clusters, ground_truth, average_method='arithmetic'):
     )
 
 
+import networkx as nx
 
-
-
-######### Modularity
 def compute_modularity(G, clusters):
     """
-    Compute modularity for an undirected weighted graph G and given clusters.
-    clusters: dict mapping cluster_id -> iterable of nodes
-    Returns Q = sum over clusters of [E_C/m - (sum_deg_C/(2m))^2]
+    Weighted modularity for an undirected graph G and a hard partition 'clusters'.
+    clusters: dict {cluster_id -> iterable_of_nodes}
+    Formula: Q = sum_C [ w_in(C)/m - (vol(C)/(2m))^2 ]
+      - w_in(C): sum of weights of edges with both ends in C (self-loops counted once)
+      - vol(C): sum of node strengths in C (strength = weighted degree)
+      - m: total edge weight (each undirected edge counted once)
     """
-    # Total edge weight (each undirected edge counted once)
-    m = sum(data['weight'] for u, v, data in G.edges(data=True))
+    # total edge weight (each undirected edge counted once)
+    m = G.size(weight='weight')
+    if m == 0:
+        return 0.0  # no edges → modularity defined as 0
+
+    # node strength (weighted degree)
+    strength = dict(G.degree(weight='weight'))
+    two_m = 2.0 * m
+
     Q = 0.0
-
     for cid, nodes in clusters.items():
-        node_set = set(nodes)
-        # Sum of weights of edges inside the cluster
-        E_C = 0.0
-        # Sum of degrees (strengths) of nodes in the cluster
-        sum_deg_C = 0.0
+        S = set(nodes)
+        if not S:
+            continue
 
-        # Compute E_C
-        for u in node_set:
-            for v, data in G[u].items():
-                if v in node_set:
-                    E_C += data['weight']
-        E_C /= 2.0  # each internal edge counted twice in the loop
+        # internal weight (counted once, self-loops included once)
+        # nx.subgraph(...).size(weight='weight') sums each undirected edge weight once
+        w_in = G.subgraph(S).size(weight='weight')
 
-        # Compute sum_deg_C
-        for u in node_set:
-            sum_deg_C += sum(data['weight'] for _, _, data in G.edges(u, data=True))
+        # community volume = sum of strengths in S
+        vol = sum(strength.get(u, 0.0) for u in S)
 
-        # Community-level modularity contribution
-        Q += (E_C / m) - (sum_deg_C / (2 * m))**2
+        Q += (w_in / m) - (vol / two_m) ** 2
 
     return Q
 
 
-########### NMI
-def compute_NMI_(clusters, ground_truth, average_method='arithmetic'):
+def compute_conductance(G, clusters, average='mean', return_per_cluster=False):
     """
-    Compute Normalized Mutual Information (NMI).
-      - clusters: dict {cluster_id -> iterable_of_nodes}
-      - ground_truth: dict {node -> true_label}
-      - average_method: {'min', 'geometric', 'arithmetic', 'max'} (sklearn 옵션)
-
-    미소속 노드(허브/아웃라이어)는 예측 라벨 -1로 처리합니다.
+    Weighted conductance for each cluster in a hard partition.
+    clusters: dict {cluster_id -> iterable_of_nodes}
+    For a set S:
+      φ(S) = cut(S, ~S) / min(vol(S), vol(~S))
+      - cut: sum of weights of edges crossing S and its complement
+      - vol: sum of strengths (weighted degrees) of nodes in the set
+    Returns:
+      - if return_per_cluster=False: a single scalar (mean/median over communities)
+      - if return_per_cluster=True: (scalar, {cid: φ})
     """
-    # 예측 라벨 매핑
-    y_pred_map = {}
-    for cid, members in clusters.items():
-        for u in members:
-            y_pred_map[u] = cid
+    m = G.size(weight='weight')
+    if m == 0:
+        return (0.0, {}) if return_per_cluster else 0.0
 
-    # 비교할 노드 목록(ground truth에 정의된 노드 기준)
-    nodes = sorted(ground_truth.keys())
-    y_true = [ground_truth[u] for u in nodes]
-    y_pred = [y_pred_map.get(u, -1) for u in nodes]
+    strength = dict(G.degree(weight='weight'))
+    two_m = 2.0 * m
 
-    return normalized_mutual_info_score(
-        y_true, y_pred, average_method=average_method
-    )
+    cond = {}
+
+    for cid, nodes in clusters.items():
+        S = set(nodes)
+        if not S:
+            cond[cid] = 0.0
+            continue
+
+        vol_S = sum(strength.get(u, 0.0) for u in S)
+        vol_comp = two_m - vol_S
+
+        # cut weight: sum of weights of edges with one end in S and the other not in S
+        cut = 0.0
+        for u in S:
+            for v, data in G[u].items():
+                if v not in S:
+                    cut += data.get('weight', 1.0)
+
+        denom = min(vol_S, vol_comp)
+        phi = 0.0 if denom <= 0.0 else (cut / denom)
+        cond[cid] = phi
+
+    vals = list(cond.values())
+    if not vals:
+        overall = 0.0
+    elif average == 'median':
+        vals_sorted = sorted(vals)
+        mid = len(vals_sorted) // 2
+        overall = (vals_sorted[mid] if len(vals_sorted) % 2 == 1
+                   else 0.5 * (vals_sorted[mid - 1] + vals_sorted[mid]))
+    else:
+        overall = sum(vals) / len(vals)
+
+    if return_per_cluster:
+        return overall, cond
+    return overall
+
+
 
 
 def compute_distance(G, u, v):
-    """두 노드 간의 거리 계산 (최단경로)"""
     try:
         return nx.shortest_path_length(G, u, v, weight='weight')
     except nx.NetworkXNoPath:
         return float('inf')
 
 def compute_avg_distance_to_cluster(G, node, cluster_nodes):
-    """한 노드에서 클러스터 내 모든 노드들까지의 평균 거리"""
     if not cluster_nodes or node not in G:
         return float('inf')
     
     distances = []
     for cluster_node in cluster_nodes:
-        if cluster_node != node:  # 자기 자신 제외
+        if cluster_node != node:
             dist = compute_distance(G, node, cluster_node)
             if dist != float('inf'):
                 distances.append(dist)
@@ -147,7 +174,6 @@ def compute_DBI(G, clusters):
     if len(clusters) <= 1:
         return float('inf')
     
-    # 각 클러스터의 diameter 계산
     def compute_diameter(nodes):
         node_list = list(nodes)
         if len(node_list) <= 1:
@@ -167,7 +193,6 @@ def compute_DBI(G, clusters):
         
         return total_distance / pair_count if pair_count > 0 else 0.0
     
-    # 두 클러스터 간의 거리 계산
     def compute_inter_cluster_distance(nodes_i, nodes_j):
         total_distance = 0.0
         pair_count = 0
@@ -182,11 +207,9 @@ def compute_DBI(G, clusters):
         
         return total_distance / pair_count if pair_count > 0 else float('inf')
     
-    # 각 클러스터의 diameter 계산
     cluster_ids = list(clusters.keys())
     diameters = {cid: compute_diameter(clusters[cid]) for cid in cluster_ids}
     
-    # DBI 계산
     dbi_sum = 0.0
     k = len(cluster_ids)
     
@@ -211,22 +234,20 @@ def compute_DBI(G, clusters):
 def compute_SI(G, clusters):
     
     if len(clusters) <= 1:
-        return -1.0  # 클러스터가 1개 이하면 silhouette 계산 불가
+        return -1.0
     
     cluster_silhouettes = []
     
     for cluster_id, cluster_nodes in clusters.items():
         cluster_nodes = list(cluster_nodes)
         if len(cluster_nodes) <= 1:
-            continue  # 노드가 1개인 클러스터는 건너뜀
+            continue
         
         node_silhouettes = []
         
         for node in cluster_nodes:
-            # a(vi): 같은 클러스터 내 다른 노드들과의 평균 거리
             a_vi = compute_avg_distance_to_cluster(G, node, cluster_nodes)
             
-            # b(vi): 가장 가까운 다른 클러스터와의 평균 거리
             b_vi = float('inf')
             
             for other_cluster_id, other_cluster_nodes in clusters.items():
@@ -236,7 +257,6 @@ def compute_SI(G, clusters):
                         avg_dist = compute_avg_distance_to_cluster(G, node, other_cluster_nodes)
                         b_vi = min(b_vi, avg_dist)
             
-            # s(vi) 계산
             if a_vi == float('inf') or b_vi == float('inf'):
                 s_vi = 0.0
             elif a_vi == 0.0 and b_vi == 0.0:
@@ -246,12 +266,10 @@ def compute_SI(G, clusters):
             
             node_silhouettes.append(s_vi)
         
-        # 클러스터의 평균 silhouette
         if node_silhouettes:
             cluster_avg_silhouette = np.mean(node_silhouettes)
             cluster_silhouettes.append(cluster_avg_silhouette)
     
-    # 전체 Silhouette Index (모든 클러스터의 평균)
     if cluster_silhouettes:
         return np.mean(cluster_silhouettes)
     else:
@@ -261,7 +279,6 @@ def compute_Qs(G, clusters, similarity_func, gamma):
     if len(clusters) == 0:
         return 0.0
     
-    # TS: 전체 네트워크의 total similarity (모든 노드 쌍에 대해)
     TS = 0.0
     all_nodes = list(G.nodes())
     for i in range(len(all_nodes)):
@@ -274,7 +291,6 @@ def compute_Qs(G, clusters, similarity_func, gamma):
     if TS == 0.0:
         return 0.0
     
-    # 각 클러스터별로 ISi와 DSi 계산
     Qs = 0.0
     
     for cluster_id, cluster_nodes in clusters.items():
@@ -294,16 +310,14 @@ def compute_Qs(G, clusters, similarity_func, gamma):
         cluster_nodes_set = set(cluster_nodes)
         for u in cluster_nodes:
             for v in all_nodes:
-                if u != v:  # 자기 자신 제외
+                if u != v:
                     sim = similarity_func(G, u, v, gamma)
                     if not np.isnan(sim) and not np.isinf(sim):
-                        # 같은 클러스터 내 노드들 간의 similarity는 절반만 계산 (중복 방지)
                         if v in cluster_nodes_set and u < v:
-                            DSi += sim  # u < v 조건으로 한 번만 계산
+                            DSi += sim
                         elif v not in cluster_nodes_set:
-                            DSi += sim  # 다른 클러스터나 hub/outlier와는 모두 계산
+                            DSi += sim
         
-        # Qs에 각 클러스터의 기여도 추가
         # Qs += ISi/TS - (DSi/TS)^2
         if TS > 0:
             Qs += (ISi / TS) - (DSi / TS) ** 2

@@ -27,20 +27,18 @@ def cosine_similarity(G, u, v, gamma):
         * sqrt(sum_{y in N(v)} w(v,y)^2)
     )
     """
-    # 이웃 집합
     neigh_u = set(G.neighbors(u))
     neigh_v = set(G.neighbors(v))
     common = neigh_u & neigh_v
 
     # direct edge weight
     w_uv = G[u][v]['weight'] if G.has_edge(u, v) else 0.0
-    # 분자: direct 연결 기여 (w_uv^2) + 공통 이웃 기여
+
     numer = w_uv**2 + sum(
         G[u][x]['weight'] * G[v][x]['weight']
         for x in common
     )
 
-    # 분모: 각 노드의 L2 norm
     norm_u = math.sqrt(sum(data['weight']**2 for _, _, data in G.edges(u, data=True)))
     norm_v = math.sqrt(sum(data['weight']**2 for _, _, data in G.edges(v, data=True)))
     if norm_u == 0 or norm_v == 0:
@@ -63,16 +61,13 @@ def wscan_p_similarity(G, u, v, gamma):
     # direct edge weight
     w_uv = G[u][v]['weight'] if G.has_edge(u, v) else 0.0
 
-    # 공통 이웃에 대한 min-weight 합
     common_sum = sum(
         min(G[u][x]['weight'], G[v][x]['weight'])
         for x in common
     )
 
-    # 분자: direct + common
     numer = w_uv + gamma * common_sum
 
-    # 분모: 각 노드의 total strength
     su = sum(data['weight'] for _, _, data in G.edges(u, data=True))
     sv = sum(data['weight'] for _, _, data in G.edges(v, data=True))
     if su == 0 or sv == 0:
@@ -81,7 +76,7 @@ def wscan_p_similarity(G, u, v, gamma):
     return numer / math.sqrt(su * sv)
 
 
-# 번외 similarity functions
+# Other similarity functions
 def weighted_jaccard_similarity(G, u, v, gamma):
     """
     Weighted Jaccard Similarity (with direct edge term and intersection only):
@@ -128,16 +123,13 @@ def wscan_p_similarity_max(G, u, v, gamma):
     # direct edge weight
     w_uv = G[u][v]['weight'] if G.has_edge(u, v) else 0.0
 
-    # 공통 이웃에 대한 max-weight 합
     common_sum = sum(
         max(G[u][x]['weight'], G[v][x]['weight'])
         for x in common
     )
 
-    # 분자: direct + common
     numer = w_uv + gamma * common_sum
 
-    # 분모: 각 노드의 total strength
     su = sum(data['weight'] for _, _, data in G.edges(u, data=True))
     sv = sum(data['weight'] for _, _, data in G.edges(v, data=True))
     if su == 0 or sv == 0:
@@ -161,16 +153,13 @@ def wscan_p_similarity_avg(G, u, v, gamma):
     # direct edge weight
     w_uv = G[u][v]['weight'] if G.has_edge(u, v) else 0.0
 
-    # 공통 이웃에 대한 min-weight 합
     common_sum = sum(
         G[u][x]['weight'] + G[v][x]['weight'] / 2.0
         for x in common
     )
 
-    # 분자: direct + common
     numer = w_uv + gamma * common_sum
 
-    # 분모: 각 노드의 total strength
     su = sum(data['weight'] for _, _, data in G.edges(u, data=True))
     sv = sum(data['weight'] for _, _, data in G.edges(v, data=True))
     if su == 0 or sv == 0:
