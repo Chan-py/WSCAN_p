@@ -79,7 +79,7 @@ perturb_edge_weights(G, args.delta_p, args.edge_p, args.weight_method)
 # --------------------------------------------------------------------
 gt_filename = "community" if args.dataclass == "synthetic" else "labels"
 gt_path = path + args.network + "/" + gt_filename + ".dat"
-if args.gt:
+if args.gt == "True":
       ground_truth = load_ground_truth(gt_path)
 
 # --------------------------------------------------------------------
